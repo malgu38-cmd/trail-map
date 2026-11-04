@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="산행지도">
+<meta name="theme-color" content="#E83828">
+<title>산행지도</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="lib/leaflet.css">
+<style>
+:root{
+  --red:#E83828; --red2:#F04E37; --peach:#FFEADF; --gray:#787878; --line:#BFBFBF;
+  --ink:#1f1f1f; --bg:#ffffff; --btn:60px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",sans-serif;
+  font-size:21px;overscroll-behavior:none}
+#map{position:fixed;inset:0;background:#e8e8e8}
+
+/* 오른쪽 버튼 줄 */
+#tools{position:fixed;right:calc(12px + env(safe-area-inset-right));top:calc(12px + env(safe-area-inset-top));
+  display:flex;flex-direction:column;gap:12px;z-index:1000}
+.tbtn{width:var(--btn);height:var(--btn);border-radius:16px;border:2px solid var(--line);background:#fff;color:var(--ink);
+  display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.18);padding:0;cursor:pointer}
+.tbtn svg{width:30px;height:30px}
+.tbtn.on{background:var(--red);border-color:var(--red);color:#fff}
+
+/* 상단 안내 띠 (모드 안내) */
+#banner{position:fixed;left:calc(12px + env(safe-area-inset-left));right:calc(84px + env(safe-area-inset-right));
+  top:calc(12px + env(safe-area-inset-top));z-index:1000;background:var(--red);color:#fff;border-radius:14px;
+  padding:12px 16px;font-size:21px;font-weight:700;display:none;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+#banner .grow{flex:1;line-height:1.3}
+#banner button{font-size:20px;font-weight:700;border:0;border-radius:10px;padding:10px 14px;background:#fff;color:var(--red)}
+
+/* 하단 정보 띠 */
+#info{position:fixed;left:calc(12px + env(safe-area-inset-left));right:calc(12px + env(safe-area-inset-right));
+  bottom:calc(12px + env(safe-area-inset-bottom));z-index:1000;background:rgba(255,255,255,.96);border:2px solid var(--line);
+  border-radius:16px;padding:10px 16px;font-size:21px;line-height:1.35;display:none;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+#info b{color:var(--red)}
+
+/* 바텀시트 */
+#sheetBg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:2000;display:none}
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:2001;background:#fff;border-radius:22px 22px 0 0;
+  padding:18px 20px calc(24px + env(safe-area-inset-bottom));max-height:82vh;overflow:auto;display:none;
+  box-shadow:0 -4px 20px rgba(0,0,0,.25)}
+#sheet h2{font-size:28px;margin:4px 0 16px;display:flex;align-items:center;gap:10px}
+#sheet h2 .x{margin-left:auto;border:0;background:none;padding:6px;color:var(--gray)}
+#sheet h3{font-size:23px;margin:22px 0 10px;color:var(--red)}
+.opt{display:flex;align-items:center;gap:14px;width:100%;text-align:left;font-size:22px;padding:16px;margin:0 0 10px;
+  border:2px solid var(--line);border-radius:14px;background:#fff;color:var(--ink)}
+.opt.sel{border-color:var(--red);background:var(--peach);font-weight:700}
+.opt small{display:block;font-size:18px;color:var(--gray);font-weight:400;margin-top:2px}
+.types{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.types button{font-size:20px;padding:14px 6px;border:2px solid var(--line);border-radius:14px;background:#fff;
+  display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--ink)}
+.types svg{width:36px;height:36px}
+#sheet h2 svg{width:30px;height:30px}
+.types button.sel{border-color:var(--red);background:var(--peach);font-weight:700}
+input[type=text]{width:100%;font-size:22px;padding:14px;border:2px solid var(--line);border-radius:12px;margin-bottom:14px}
+.big{width:100%;font-size:23px;font-weight:700;padding:16px;border:0;border-radius:14px;background:var(--red);color:#fff;margin-top:4px}
+.sub{width:100%;font-size:21px;padding:14px;border:2px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);margin-top:10px}
+.row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #eee}
+.row .name{flex:1;font-size:21px;line-height:1.3}
+.row .name small{display:block;color:var(--gray);font-size:18px}
+.row button{border:2px solid var(--line);background:#fff;border-radius:12px;padding:8px 12px;font-size:19px;color:var(--ink)}
+.row button.del{color:var(--red);border-color:#f3b7b0}
+.empty{color:var(--gray);font-size:20px;padding:6px 0}
+.note{font-size:18px;color:var(--gray);line-height:1.45;margin-top:14px}
+
+/* 마커 */
+.pin{width:44px;height:44px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--red);border:3px solid #fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
+.pin svg{transform:rotate(45deg);width:24px;height:24px;color:#fff}
+.me{width:22px;height:22px;border-radius:50%;background:#1a73e8;border:4px solid #fff;box-shadow:0 0 0 2px rgba(26,115,232,.4),0 2px 6px rgba(0,0,0,.3)}
+.leaflet-popup-content{font-size:21px;line-height:1.4;margin:14px 16px}
+.leaflet-popup-content button{font-size:19px;margin-top:10px;padding:8px 12px;border-radius:10px;border:2px solid #f3b7b0;background:#fff;color:var(--red)}
+.leaflet-control-attribution{font-size:11px}
+.leaflet-control-scale-line{font-size:15px}
+.mlabel{background:var(--red);color:#fff;font-size:17px;font-weight:700;padding:3px 8px;border-radius:8px;white-space:nowrap;border:0;box-shadow:none}
+.mlabel:before{display:none}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="banner"><span class="grow" id="bannerText"></span><button id="bannerBtn">끝내기</button></div>
+
+<div id="tools">
+  <button class="tbtn" id="bLocate" title="내 위치"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg></button>
+  <button class="tbtn" id="bLayers" title="지도 종류"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></button>
+  <button class="tbtn" id="bPin" title="표시 추가"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg></button>
+  <button class="tbtn" id="bRuler" title="거리 재기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg></button>
+  <button class="tbtn" id="bGpx" title="GPX 불러오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg></button>
+  <button class="tbtn" id="bList" title="목록"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></svg></button>
+</div>
+
+<div id="info"></div>
+<div id="sheetBg"></div>
+<div id="sheet"></div>
+<input type="file" id="gpxFile" accept=".gpx,application/gpx+xml,application/xml,text/xml" style="display:none">
+<input type="file" id="backupFile" accept=".json,application/json" style="display:none">
+
+<script src="lib/leaflet.js"></script>
+<script>
+'use strict';
+/* ---------- 아이콘 (Lucide, 인라인) ---------- */
+const S = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+const ICON = {
+  x: S('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+  tent: S('<path d="M3.5 21 14 3"/><path d="M20.5 21 10 3"/><path d="M15.5 21 12 15l-3.5 6"/><path d="M2 21h20"/>'),
+  droplet: S('<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>'),
+  car: S('<path d="m21 8-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8"/><path d="M7 14h.01"/><path d="M17 14h.01"/><rect width="18" height="8" x="3" y="10" rx="2"/><path d="M5 18v2"/><path d="M19 18v2"/>'),
+  mountain: S('<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>'),
+  flag: S('<path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/>'),
+  pin: S('<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>'),
+  route: S('<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>'),
+};
+const TYPES = [
+  {k:'camp', label:'야영·대피소', icon:'tent'},
+  {k:'water', label:'물', icon:'droplet'},
+  {k:'park', label:'주차', icon:'car'},
+  {k:'peak', label:'정상·전망', icon:'mountain'},
+  {k:'start', label:'출발·도착', icon:'flag'},
+  {k:'etc', label:'기타', icon:'pin'},
+];
+const typeOf = k => TYPES.find(t => t.k === k) || TYPES[5];
+
+/* ---------- 저장 (이 기기에만) ---------- */
+const KEY = 'sanhaeng-map-v1';
+function load(){ try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch(e){ return {}; } }
+const db = Object.assign({ marks:[], tracks:[], base:'vbase', view:null }, load());
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(db)); } catch(e){ alertSheet('저장 공간이 부족해서 저장하지 못했어요. 목록에서 안 쓰는 GPX를 지워 주세요.'); } }
+
+/* ---------- 지도 ---------- */
+const VKEY = '9F35E2D2-DD0E-4503-ADF5-ACA296DF46B3'; // 브이월드 개발키 (malgu38-cmd.github.io 전용, 만료 2027-05-04)
+const VW = (layer, ext) => L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${VKEY}/${layer}/{z}/{y}/{x}.${ext}`, {maxZoom:19, maxNativeZoom:19, minZoom:6, attribution:'© 브이월드(국토교통부)'});
+const BASES = {
+  vbase:{ name:'브이월드 일반', desc:'한국 지도, 한글 지명 (국토교통부)', layer: () => VW('Base', 'png') },
+  vsat: { name:'브이월드 위성', desc:'한국 항공사진 + 지명', layer: () => L.layerGroup([VW('Satellite', 'jpeg'), VW('Hybrid', 'png')]) },
+  topo: { name:'등산지도', desc:'등고선 포함 (OpenTopoMap)', layer: () => L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {subdomains:'abc', maxZoom:17, maxNativeZoom:17, attribution:'© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA)'}) },
+  osm:  { name:'일반지도', desc:'길·건물 위주 (OpenStreetMap)', layer: () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}) },
+  sat:  { name:'위성사진', desc:'항공·위성 영상 (Esri)', layer: () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom:19, maxNativeZoom:18, attribution:'Tiles © Esri'}) },
+};
+const v0 = db.view || { lat:36.5, lng:127.8, z:7 };
+const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true }).setView([v0.lat, v0.lng], v0.z);
+L.control.scale({ imperial:false, position:'bottomleft' }).addTo(map);
+let baseLayer = null;
+function setBase(k){
+  if (!BASES[k]) k = 'vbase';
+  if (baseLayer) map.removeLayer(baseLayer);
+  baseLayer = BASES[k].layer().addTo(map);
+  db.base = k; save();
+}
+setBase(db.base);
+map.on('moveend', () => { const c = map.getCenter(); db.view = { lat:+c.lat.toFixed(6), lng:+c.lng.toFixed(6), z:map.getZoom() }; save(); });
+
+/* ---------- 공통 UI ---------- */
+const $ = id => document.getElementById(id);
+function openSheet(html){ $('sheet').innerHTML = html; $('sheet').style.display = 'block'; $('sheetBg').style.display = 'block';
+  $('sheet').querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheet); }
+function closeSheet(){ $('sheet').style.display = 'none'; $('sheetBg').style.display = 'none'; }
+$('sheetBg').onclick = closeSheet;
+const head = (t) => `<h2>${t}<button class="x" data-close>${ICON.x}</button></h2>`;
+function alertSheet(msg){ openSheet(head('알림') + `<p style="line-height:1.5">${msg}</p><button class="big" data-close>확인</button>`); }
+let mode = null; // 'pin' | 'ruler' | null
+function setMode(m, text){
+  mode = m;
+  $('bPin').classList.toggle('on', m === 'pin');
+  $('bRuler').classList.toggle('on', m === 'ruler');
+  $('banner').style.display = m ? 'flex' : 'none';
+  if (m) $('bannerText').textContent = text;
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtKm = m => m >= 1000 ? (m/1000).toFixed(2) + ' km' : Math.round(m) + ' m';
+function showInfo(html){ const el = $('info'); if (html){ el.innerHTML = html; el.style.display = 'block'; } else el.style.display = 'none'; }
+
+/* ---------- 지도 종류 ---------- */
+$('bLayers').onclick = () => {
+  openSheet(head('지도 종류') + Object.entries(BASES).map(([k,b]) =>
+    `<button class="opt ${db.base===k?'sel':''}" data-k="${k}"><span>${b.name}<small>${b.desc}</small></span></button>`).join('') +
+    `<p class="note">브이월드는 한국 지명이 정확하고, 등산지도는 등고선이 촘촘해요. 한 번 본 지역은 신호가 없어도 다시 볼 수 있어요.</p>`);
+  $('sheet').querySelectorAll('.opt').forEach(b => b.onclick = () => { setBase(b.dataset.k); closeSheet(); });
+};
+
+/* ---------- 내 위치 ---------- */
+let watchId = null, meMarker = null, meCircle = null, follow = false, firstFix = false;
+$('bLocate').onclick = () => {
+  if (watchId !== null && follow) { stopLocate(); return; }
+  if (watchId !== null) { follow = true; $('bLocate').classList.add('on'); if (meMarker) map.setView(meMarker.getLatLng(), Math.max(map.getZoom(), 15)); return; }
+  if (!navigator.geolocation) { alertSheet('이 브라우저는 위치 기능을 지원하지 않아요.'); return; }
+  follow = true; firstFix = true; $('bLocate').classList.add('on');
+  showInfo('위치를 찾는 중…');
+  watchId = navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
+};
+function stopLocate(){
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  watchId = null; follow = false; $('bLocate').classList.remove('on');
+  if (meMarker) { map.removeLayer(meMarker); map.removeLayer(meCircle); meMarker = meCircle = null; }
+  showInfo(null);
+}
+function onPos(p){
+  const ll = [p.coords.latitude, p.coords.longitude], acc = p.coords.accuracy;
+  if (!meMarker) {
+    meCircle = L.circle(ll, { radius:acc, color:'#1a73e8', weight:1, fillOpacity:.12 }).addTo(map);
+    meMarker = L.marker(ll, { icon:L.divIcon({ className:'', html:'<div class="me"></div>', iconSize:[22,22], iconAnchor:[11,11] }), interactive:false }).addTo(map);
+  } else { meMarker.setLatLng(ll); meCircle.setLatLng(ll).setRadius(acc); }
+  if (firstFix) { map.setView(ll, Math.max(map.getZoom(), 15)); firstFix = false; }
+  else if (follow) map.panTo(ll, { animate:true });
+  const alt = p.coords.altitude != null ? ` · 고도 <b>${Math.round(p.coords.altitude)} m</b>` : '';
+  if (mode !== 'ruler') showInfo(`위도 ${ll[0].toFixed(5)} · 경도 ${ll[1].toFixed(5)}${alt}<br><span style="color:var(--gray);font-size:18px">오차 약 ±${Math.round(acc)} m · 버튼 다시 누르면 위치 끄기</span>`);
+}
+function onPosErr(e){
+  const msg = e.code === 1 ? '위치 권한이 꺼져 있어요. 아이폰 설정 → 개인정보 보호 → 위치 서비스 → Safari 웹 사이트를 "앱을 사용하는 동안"으로 바꿔 주세요.'
+            : e.code === 3 ? '위치를 찾는 데 시간이 오래 걸려요. 하늘이 트인 곳에서 다시 눌러 보세요.' : '위치를 가져오지 못했어요.';
+  stopLocate(); alertSheet(msg);
+}
+map.on('dragstart', () => { if (follow) { follow = false; $('bLocate').classList.remove('on'); } });
+
+/* ---------- 내 표시(마커) ---------- */
+const markLayer = L.layerGroup().addTo(map);
+function pinIcon(k){ return L.divIcon({ className:'', html:`<div class="pin">${ICON[typeOf(k).icon]}</div>`, iconSize:[44,44], iconAnchor:[22,44], popupAnchor:[0,-40] }); }
+function drawMarks(){
+  markLayer.clearLayers();
+  db.marks.forEach(m => {
+    const mk = L.marker([m.lat, m.lng], { icon:pinIcon(m.type) }).addTo(markLayer);
+    if (m.name) mk.bindTooltip(esc(m.name), { permanent:true, direction:'right', offset:[14,-26], className:'mlabel' });
+    mk.bindPopup(() => {
+      const d = document.createElement('div');
+      d.innerHTML = `<b>${esc(m.name || typeOf(m.type).label)}</b><br><span style="color:#787878;font-size:18px">${typeOf(m.type).label} · ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</span><br>`;
+      const b = document.createElement('button'); b.textContent = '이 표시 지우기';
+      b.onclick = () => { db.marks = db.marks.filter(x => x.id !== m.id); save(); drawMarks(); };
+      d.appendChild(b); return d;
+    });
+  });
+}
+drawMarks();
+$('bPin').onclick = () => { if (mode === 'pin') setMode(null); else setMode('pin', '표시할 곳을 지도에서 누르세요'); };
+function addMarkSheet(latlng){
+  let sel = 'etc';
+  openSheet(head('표시 추가') +
+    `<div class="types">${TYPES.map(t => `<button data-k="${t.k}" class="${t.k===sel?'sel':''}">${ICON[t.icon]}${t.label}</button>`).join('')}</div>
+     <input type="text" id="mName" placeholder="이름 (예: 계곡 물 뜨는 곳)" maxlength="40">
+     <button class="big" id="mSave">저장</button><button class="sub" data-close>취소</button>`);
+  $('sheet').querySelectorAll('.types button').forEach(b => b.onclick = () => {
+    sel = b.dataset.k; $('sheet').querySelectorAll('.types button').forEach(x => x.classList.toggle('sel', x === b)); });
+  $('mSave').onclick = () => {
+    db.marks.push({ id:Date.now().toString(36), type:sel, name:$('mName').value.trim(), lat:+latlng.lat.toFixed(6), lng:+latlng.lng.toFixed(6) });
+    save(); drawMarks(); closeSheet(); setMode(null);
+  };
+}
+
+/* ---------- 거리 재기 ---------- */
+let rulerPts = [], rulerLine = null, rulerDots = L.layerGroup().addTo(map);
+function rulerTotal(){ let s = 0; for (let i = 1; i < rulerPts.length; i++) s += map.distance(rulerPts[i-1], rulerPts[i]); return s; }
+function rulerUpdate(){
+  if (rulerLine) map.removeLayer(rulerLine);
+  rulerLine = rulerPts.length > 1 ? L.polyline(rulerPts, { color:'#E83828', weight:5, dashArray:'10 8' }).addTo(map) : null;
+  showInfo(rulerPts.length < 2 ? '지점을 차례로 누르세요' : `총 거리 <b>${fmtKm(rulerTotal())}</b> · 지점 ${rulerPts.length}개`);
+}
+function rulerClear(){ rulerPts = []; rulerDots.clearLayers(); if (rulerLine) map.removeLayer(rulerLine); rulerLine = null; }
+$('bRuler').onclick = () => {
+  if (mode === 'ruler') { setMode(null); rulerClear(); showInfo(null); return; }
+  setMode('ruler', '지점을 차례로 눌러 거리를 재요'); rulerClear(); rulerUpdate();
+};
+
+/* ---------- 지도 누르기 ---------- */
+map.on('click', e => {
+  if (mode === 'pin') addMarkSheet(e.latlng);
+  else if (mode === 'ruler') {
+    rulerPts.push(e.latlng);
+    L.circleMarker(e.latlng, { radius:8, color:'#fff', weight:3, fillColor:'#E83828', fillOpacity:1 }).addTo(rulerDots);
+    rulerUpdate();
+  }
+});
+$('bannerBtn').onclick = () => { if (mode === 'ruler') { rulerClear(); showInfo(null); } setMode(null); };
+
+/* ---------- GPX ---------- */
+const trackLayer = L.layerGroup().addTo(map);
+const TRACK_COLORS = ['#E83828', '#1a73e8', '#7b2cbf', '#e07a00', '#0a8f5a'];
+function parseGpx(text, fname){
+  const xml = new DOMParser().parseFromString(text, 'application/xml');
+  if (xml.getElementsByTagName('parsererror').length) throw new Error('GPX 파일을 읽지 못했어요.');
+  const pick = tag => Array.from(xml.getElementsByTagName(tag));
+  let pts = pick('trkpt'); if (!pts.length) pts = pick('rtept');
+  const coords = pts.map(p => { const e = p.getElementsByTagName('ele')[0];
+    return [+(+p.getAttribute('lat')).toFixed(6), +(+p.getAttribute('lon')).toFixed(6), e ? Math.round(+e.textContent) : null]; })
+    .filter(c => isFinite(c[0]) && isFinite(c[1]));
+  const wpts = pick('wpt').map(w => { const n = w.getElementsByTagName('name')[0];
+    return { lat:+w.getAttribute('lat'), lng:+w.getAttribute('lon'), name:n ? n.textContent.trim() : '' }; });
+  const nm = (xml.querySelector('trk > name, rte > name, metadata > name') || {}).textContent;
+  if (!coords.length && !wpts.length) throw new Error('파일 안에 경로나 지점이 없어요.');
+  return { id:Date.now().toString(36), name:(nm && nm.trim()) || fname.replace(/\.gpx$/i, ''), coords, wpts };
+}
+function trackStats(t){
+  let dist = 0, up = 0, down = 0, hi = null, lo = null, prevE = null;
+  t.coords.forEach((c, i) => {
+    if (i) dist += map.distance([t.coords[i-1][0], t.coords[i-1][1]], [c[0], c[1]]);
+    if (c[2] != null) {
+      hi = hi == null ? c[2] : Math.max(hi, c[2]); lo = lo == null ? c[2] : Math.min(lo, c[2]);
+      if (prevE != null) { const d = c[2] - prevE; if (Math.abs(d) >= 3) { if (d > 0) up += d; else down -= d; prevE = c[2]; } } else prevE = c[2];
+    }
+  });
+  return { dist, up, down, hi, lo };
+}
+function statText(t){
+  const s = trackStats(t);
+  return `${fmtKm(s.dist)}` + (s.hi != null ? ` · 오르막 ${Math.round(s.up)} m · 최고 ${s.hi} m` : '');
+}
+function drawTracks(){
+  trackLayer.clearLayers();
+  db.tracks.forEach((t, i) => {
+    const col = TRACK_COLORS[i % TRACK_COLORS.length];
+    if (t.coords.length > 1) {
+      L.polyline(t.coords.map(c => [c[0], c[1]]), { color:'#fff', weight:9, opacity:.85 }).addTo(trackLayer);
+      L.polyline(t.coords.map(c => [c[0], c[1]]), { color:col, weight:5 }).addTo(trackLayer)
+        .bindPopup(`<b>${esc(t.name)}</b><br>${statText(t)}`);
+    }
+    t.wpts.forEach(w => L.circleMarker([w.lat, w.lng], { radius:8, color:'#fff', weight:3, fillColor:col, fillOpacity:1 })
+      .addTo(trackLayer).bindPopup(`<b>${esc(w.name || '지점')}</b><br><span style="font-size:18px;color:#787878">${esc(t.name)}</span>`));
+  });
+}
+function trackBounds(t){ const all = t.coords.map(c => [c[0], c[1]]).concat(t.wpts.map(w => [w.lat, w.lng])); return L.latLngBounds(all); }
+drawTracks();
+$('bGpx').onclick = () => $('gpxFile').click();
+$('gpxFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const t = parseGpx(await f.text(), f.name);
+    db.tracks.push(t); save(); drawTracks();
+    map.fitBounds(trackBounds(t), { padding:[40,40] });
+    showInfo(`<b>${esc(t.name)}</b><br>${statText(t)}`);
+  } catch(err) { alertSheet(err.message); }
+};
+
+/* ---------- 목록 ---------- */
+$('bList').onclick = openList;
+function openList(){
+  const ms = db.marks.map(m => `<div class="row"><span class="name">${esc(m.name || typeOf(m.type).label)}<small>${typeOf(m.type).label}</small></span>
+      <button data-go-m="${m.id}">보기</button><button class="del" data-del-m="${m.id}">지우기</button></div>`).join('') || '<div class="empty">아직 없어요. 오른쪽 핀 버튼으로 추가하세요.</div>';
+  const ts = db.tracks.map(t => `<div class="row"><span class="name">${esc(t.name)}<small>${statText(t)}</small></span>
+      <button data-go-t="${t.id}">보기</button><button class="del" data-del-t="${t.id}">지우기</button></div>`).join('') || '<div class="empty">아직 없어요. 경로 버튼으로 GPX 파일을 불러오세요.</div>';
+  openSheet(head('내 목록') + `<h3>내 표시 (${db.marks.length})</h3>${ms}<h3>GPX 경로 (${db.tracks.length})</h3>${ts}
+    <h3>백업</h3>
+    <button class="sub" id="bExport">백업 파일로 내보내기</button>
+    <button class="sub" id="bImport">백업 파일 불러오기</button>
+    <p class="note">표시와 경로는 이 아이폰에만 저장돼요. 사파리 방문 기록·데이터를 지우면 함께 사라지니 가끔 백업해 두세요.</p>`);
+  const sh = $('sheet');
+  sh.querySelectorAll('[data-go-m]').forEach(b => b.onclick = () => { const m = db.marks.find(x => x.id === b.dataset.goM); closeSheet(); map.setView([m.lat, m.lng], Math.max(map.getZoom(), 15)); });
+  sh.querySelectorAll('[data-del-m]').forEach(b => b.onclick = () => { db.marks = db.marks.filter(x => x.id !== b.dataset.delM); save(); drawMarks(); openList(); });
+  sh.querySelectorAll('[data-go-t]').forEach(b => b.onclick = () => { const t = db.tracks.find(x => x.id === b.dataset.goT); closeSheet(); map.fitBounds(trackBounds(t), { padding:[40,40] }); showInfo(`<b>${esc(t.name)}</b><br>${statText(t)}`); });
+  sh.querySelectorAll('[data-del-t]').forEach(b => b.onclick = () => { db.tracks = db.tracks.filter(x => x.id !== b.dataset.delT); save(); drawTracks(); openList(); });
+  $('bExport').onclick = () => {
+    const blob = new Blob([JSON.stringify({ marks:db.marks, tracks:db.tracks }, null, 1)], { type:'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `산행지도_백업_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); a.remove();
+  };
+  $('bImport').onclick = () => $('backupFile').click();
+}
+$('backupFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    const have = new Set(db.marks.map(m => m.id).concat(db.tracks.map(t => t.id)));
+    (d.marks || []).forEach(m => { if (!have.has(m.id)) db.marks.push(m); });
+    (d.tracks || []).forEach(t => { if (!have.has(t.id)) db.tracks.push(t); });
+    save(); drawMarks(); drawTracks(); openList();
+  } catch(err) { alertSheet('백업 파일을 읽지 못했어요.'); }
+};
+
+/* ---------- 오프라인 (본 지역 지도 저장) ---------- */
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
