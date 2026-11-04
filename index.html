@@ -70,6 +70,13 @@ input[type=text]{width:100%;font-size:22px;padding:14px;border:2px solid var(--l
 .row .name small{display:block;color:var(--gray);font-size:18px}
 .row button{border:2px solid var(--line);background:#fff;border-radius:12px;padding:8px 12px;font-size:19px;color:var(--ink)}
 .row button.del{color:var(--red);border-color:#f3b7b0}
+.sbox{display:flex;gap:10px;margin-bottom:6px}
+.sbox input{flex:1;margin:0}
+.sbox button{font-size:21px;font-weight:700;border:0;border-radius:12px;padding:0 18px;background:var(--red);color:#fff;white-space:nowrap}
+.res{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #eee;background:#fff;padding:14px 4px;font-size:21px;line-height:1.35;color:var(--ink)}
+.res small{display:block;color:var(--gray);font-size:18px}
+.res .tag{display:inline-block;font-size:15px;font-weight:700;color:var(--red);background:var(--peach);border-radius:6px;padding:1px 6px;margin-right:6px;vertical-align:2px}
+.hit{width:26px;height:26px;border-radius:50%;background:#1f1f1f;border:4px solid #fff;box-shadow:0 0 0 3px #E83828,0 2px 6px rgba(0,0,0,.35)}
 .empty{color:var(--gray);font-size:20px;padding:6px 0}
 .note{font-size:18px;color:var(--gray);line-height:1.45;margin-top:14px}
 
@@ -92,6 +99,7 @@ input[type=text]{width:100%;font-size:22px;padding:14px;border:2px solid var(--l
 <div id="banner"><span class="grow" id="bannerText"></span><button id="bannerBtn">끝내기</button></div>
 
 <div id="tools">
+  <button class="tbtn" id="bSearch" title="장소 검색"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
   <button class="tbtn" id="bLocate" title="내 위치"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg></button>
   <button class="tbtn" id="bLayers" title="지도 종류"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></button>
   <button class="tbtn" id="bPin" title="표시 추가"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg></button>
@@ -372,6 +380,79 @@ $('backupFile').onchange = async e => {
     save(); drawMarks(); drawTracks(); openList();
   } catch(err) { alertSheet('백업 파일을 읽지 못했어요.'); }
 };
+
+
+/* ---------- 장소 검색 (브이월드 검색 API, JSONP) ---------- */
+let jsonpN = 0;
+function jsonp(params){
+  return new Promise(resolve => {
+    const cb = '__vw' + (++jsonpN), sc = document.createElement('script');
+    const q = new URLSearchParams(Object.assign({ service:'search', request:'search', version:'2.0', crs:'EPSG:4326', size:'10', page:'1', format:'json', errorformat:'json', key:VKEY, callback:cb }, params));
+    const done = v => { delete window[cb]; sc.remove(); clearTimeout(t); resolve(v); };
+    const t = setTimeout(() => done(null), 8000);
+    window[cb] = d => done(d);
+    sc.onerror = () => done(null);
+    sc.src = 'https://api.vworld.kr/req/search?' + q.toString();
+    document.head.appendChild(sc);
+  });
+}
+const itemsOf = d => (d && d.response && d.response.status === 'OK' && d.response.result && d.response.result.items) || [];
+async function searchPlaces(q){
+  const near = map.getCenter();
+  const [pl, rd, pc, ds] = await Promise.all([
+    jsonp({ query:q, type:'place' }),
+    jsonp({ query:q, type:'address', category:'road' }),
+    jsonp({ query:q, type:'address', category:'parcel' }),
+    jsonp({ query:q, type:'district', category:'L4' }),
+  ]);
+  const out = [];
+  const qq = q.replace(/\s/g,'');
+  db.marks.filter(m => (m.name || '').replace(/\s/g,'').includes(qq)).forEach(m => out.push({ tag:'내 표시', title:m.name, sub:typeOf(m.type).label, lat:m.lat, lng:m.lng }));
+  itemsOf(pl).forEach(i => out.push({ tag:'장소', title:i.title, sub:(i.address && (i.address.road || i.address.parcel)) || i.category || '', lat:+i.point.y, lng:+i.point.x }));
+  itemsOf(rd).concat(itemsOf(pc)).forEach(i => out.push({ tag:'주소', title:(i.address.road || i.address.parcel), sub:i.address.road && i.address.parcel ? '지번 ' + i.address.parcel : '', lat:+i.point.y, lng:+i.point.x }));
+  itemsOf(ds).forEach(i => out.push({ tag:'지역', title:i.title, sub:'', lat:+i.point.y, lng:+i.point.x }));
+  // 같은 이름이 1km 안에 여러 개면 하나만, 지금 보는 곳과 가까운 순(내 표시는 맨 위)
+  const uniq = [];
+  out.forEach(r => { if (!uniq.some(u => u.title === r.title && map.distance([u.lat,u.lng],[r.lat,r.lng]) < 1000)) uniq.push(r); });
+  return uniq.map(r => Object.assign(r, { d: map.distance(near, [r.lat, r.lng]) }))
+    .sort((a, b) => (a.tag === '내 표시' ? -1 : 0) - (b.tag === '내 표시' ? -1 : 0) || a.d - b.d).slice(0, 30);
+}
+let hitMarker = null;
+function showHit(r){
+  if (hitMarker) map.removeLayer(hitMarker);
+  hitMarker = L.marker([r.lat, r.lng], { icon:L.divIcon({ className:'', html:'<div class="hit"></div>', iconSize:[26,26], iconAnchor:[13,13], popupAnchor:[0,-12] }) }).addTo(map);
+  const d = document.createElement('div');
+  d.innerHTML = `<b>${esc(r.title)}</b>${r.sub ? `<br><span style="color:#787878;font-size:18px">${esc(r.sub)}</span>` : ''}<br>`;
+  const b = document.createElement('button'); b.textContent = '여기에 표시 추가';
+  b.style.cssText = 'border-color:#E83828;background:#E83828;color:#fff;font-weight:700';
+  b.onclick = () => { map.closePopup(); const name = r.tag === '주소' ? '' : r.title; addMarkSheet(L.latLng(r.lat, r.lng)); const inp = $('mName'); if (inp) inp.value = name; };
+  d.appendChild(b);
+  hitMarker.bindPopup(d).on('popupclose', () => {});
+  map.setView([r.lat, r.lng], Math.max(map.getZoom(), 16));
+  setTimeout(() => hitMarker && hitMarker.openPopup(), 350);
+}
+let lastQ = '', lastRes = [];
+function resultsHtml(list){
+  if (!list) return '';
+  if (!list.length) return `<p class="empty" style="line-height:1.5">찾은 곳이 없어요.<br>캠핑장·식당 이름은 안 나올 때가 많아요. <b>도로명 주소</b>(예: 민주지산로 765)나 <b>산 이름·면 이름</b>으로 찾아 보세요.</p>`;
+  return list.map((r, i) => `<button class="res" data-i="${i}"><span class="tag">${r.tag}</span>${esc(r.title)}<small>${esc(r.sub || '')}${r.sub ? ' · ' : ''}지금 화면에서 ${fmtKm(r.d)}</small></button>`).join('');
+}
+function openSearch(){
+  openSheet(head('장소 검색') + `<form class="sbox" id="sForm"><input type="text" id="sQ" enterkeyhint="search" placeholder="산·주소·지명 (예: 민주지산)" value="${esc(lastQ)}"><button type="submit">찾기</button></form>
+    <div id="sRes">${resultsHtml(lastQ ? lastRes : null)}</div>
+    <p class="note">산·마을·면 이름, 도로명 주소, 내가 저장한 표시 이름으로 찾을 수 있어요. 인터넷이 될 때만 돼요.</p>`);
+  const bind = () => $('sRes').querySelectorAll('.res').forEach(b => b.onclick = () => { closeSheet(); showHit(lastRes[+b.dataset.i]); });
+  bind();
+  $('sForm').onsubmit = async e => {
+    e.preventDefault();
+    const q = $('sQ').value.trim(); if (!q) return;
+    $('sQ').blur(); $('sRes').innerHTML = '<p class="empty">찾는 중…</p>';
+    try { lastRes = await searchPlaces(q); } catch (err) { lastRes = []; }
+    lastQ = q; $('sRes').innerHTML = resultsHtml(lastRes); bind();
+  };
+  if (!lastQ) setTimeout(() => $('sQ').focus(), 100);
+}
+$('bSearch').onclick = openSearch;
 
 /* ---------- 오프라인 (본 지역 지도 저장) ---------- */
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
