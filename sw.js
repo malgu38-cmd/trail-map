@@ -1,5 +1,5 @@
 // 산행지도 오프라인 저장: 앱 파일은 미리 저장, 지도 그림(타일)은 한 번 본 것을 저장해 두고 신호 없을 때 꺼내 씀.
-const APP = 'sanhaeng-app-v3';
+const APP = 'sanhaeng-app-v4';
 const TILES = 'sanhaeng-tiles-v1';
 const MAX_TILES = 4000; // 대략 60~100MB
 const APP_FILES = ['./', 'index.html', 'lib/leaflet.js', 'lib/leaflet.css', 'manifest.json', 'icon-180.png', 'icon-512.png'];
@@ -12,7 +12,7 @@ self.addEventListener('activate', e => {
     .then(() => self.clients.claim()));
 });
 
-const isTile = url => /api\.vworld\.kr\/req\/wmts|tile\.opentopomap\.org|tile\.openstreetmap\.org|server\.arcgisonline\.com/.test(url);
+const isTile = url => /api\.vworld\.kr\/req\/wmts|map\.ngii\.go\.kr\/openapi\/Gettile|tile\.opentopomap\.org|tile\.openstreetmap\.org|server\.arcgisonline\.com/.test(url);
 
 async function trim(cache){
   const keys = await cache.keys();

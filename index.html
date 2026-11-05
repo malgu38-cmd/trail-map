@@ -148,9 +148,59 @@ function save(){ try { localStorage.setItem(KEY, JSON.stringify(db)); } catch(e)
 /* ---------- 지도 ---------- */
 const VKEY = '9F35E2D2-DD0E-4503-ADF5-ACA296DF46B3'; // 브이월드 개발키 (malgu38-cmd.github.io 전용, 만료 2027-05-04)
 const VW = (layer, ext) => L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${VKEY}/${layer}/{z}/{y}/{x}.${ext}`, {maxZoom:19, maxNativeZoom:19, minZoom:6, attribution:'© 브이월드(국토교통부)'});
+/* 국토지리정보원 지도는 좌표계가 달라(EPSG:5179) 이 지도를 고를 때만 지도 좌표계를 바꾼다.
+   확대 단계는 z = L단계 + 1 로 맞춰서 지도를 바꿔도 보던 위치와 축척이 거의 그대로다. */
+const NKEY = '1830EC6B035E8287F81404C36BD5488DB65EDE61DC'; // 국토지리정보원 키 (malgu38-cmd.github.io 전용, 2026-11-05 발급)
+const NG_TM = (() => {
+  const a=6378137, f=1/298.257222101, k0=0.9996, lat0=38*Math.PI/180, lon0=127.5*Math.PI/180, FE=1000000, FN=2000000;
+  const n=f/(2-f), n2=n*n, n3=n2*n, n4=n3*n, e=2*Math.sqrt(n)/(1+n), A=a/(1+n)*(1+n2/4+n4/64);
+  const al=[n/2-2*n2/3+5*n3/16+41*n4/180, 13*n2/48-3*n3/5+557*n4/1440, 61*n3/240-103*n4/140, 49561*n4/161280];
+  const be=[n/2-2*n2/3+37*n3/96-n4/360, n2/48+n3/15-437*n4/1440, 17*n3/480-37*n4/840, 4397*n4/161280];
+  const de=[2*n-2*n2/3-2*n3+116*n4/45, 7*n2/3-8*n3/5-227*n4/45, 56*n3/15-136*n4/35, 4279*n4/630];
+  const xiEta = (lat, dl) => {
+    const s=Math.sin(lat), t=Math.sinh(Math.atanh(s)-e*Math.atanh(e*s));
+    const x0=Math.atan2(t,Math.cos(dl)), h0=Math.atanh(Math.sin(dl)/Math.sqrt(1+t*t));
+    let x=x0, h=h0;
+    al.forEach((v,i)=>{ const j=2*(i+1); x+=v*Math.sin(j*x0)*Math.cosh(j*h0); h+=v*Math.cos(j*x0)*Math.sinh(j*h0); });
+    return [x,h];
+  };
+  const M0=k0*A*xiEta(lat0,0)[0];
+  return {
+    forward(lat,lng){ const [x,h]=xiEta(lat*Math.PI/180,lng*Math.PI/180-lon0); return [FE+k0*A*h, FN+k0*A*x-M0]; },
+    inverse(E,N){
+      const x=(N-FN+M0)/(k0*A), h=(E-FE)/(k0*A); let x1=x, h1=h;
+      be.forEach((v,i)=>{ const j=2*(i+1); x1-=v*Math.sin(j*x)*Math.cosh(j*h); h1-=v*Math.cos(j*x)*Math.sinh(j*h); });
+      const chi=Math.asin(Math.sin(x1)/Math.cosh(h1)); let lat=chi;
+      de.forEach((v,i)=>{ lat+=v*Math.sin(2*(i+1)*chi); });
+      return [lat*180/Math.PI, (lon0+Math.atan2(Math.sinh(h1),Math.cos(x1)))*180/Math.PI];
+    }
+  };
+})();
+const NG_RES0 = 133693.44; // z=0일 때 픽셀당 미터 (L05=2088.96 = z6)
+const NG_CRS = L.extend({}, L.CRS.Earth, {
+  code:'EPSG:5179',
+  projection:{
+    project: ll => { const [x,y] = NG_TM.forward(ll.lat, ll.lng); return L.point(x,y); },
+    unproject: p => { const [lat,lng] = NG_TM.inverse(p.x, p.y); return L.latLng(lat,lng); },
+    bounds: L.bounds([-200000,-28024123.62],[31824123.62,4000000]),
+  },
+  transformation: new L.Transformation(1, 200000, -1, 4000000),
+  scale: z => Math.pow(2,z) / NG_RES0,
+  zoom: s => Math.log2(s * NG_RES0),
+  wrapLng: undefined, wrapLat: undefined, infinite:false,
+});
+const NGLayer = L.TileLayer.extend({
+  getTileUrl(c){
+    const m = 'L' + String(this._getZoomForUrl() - 1).padStart(2,'0');
+    return `https://map.ngii.go.kr/openapi/Gettile.do?apikey=${NKEY}&service=WMTS&request=GetTile&version=1.0.0&layer=${this.options.ngLayer}&style=korean&format=image/png&tilematrixset=korean&tilematrix=${m}&tilerow=${c.y}&tilecol=${c.x}`;
+  }
+});
+const NG = ngLayer => new NGLayer('', {ngLayer, minZoom:6, maxZoom:19, maxNativeZoom:19, bounds:[[32,123.5],[39.5,132.5]], attribution:'© 국토지리정보원'});
 const BASES = {
   vbase:{ name:'브이월드 일반', desc:'한국 지도, 한글 지명 (국토교통부)', layer: () => VW('Base', 'png') },
   vsat: { name:'브이월드 위성', desc:'한국 항공사진 + 지명', layer: () => L.layerGroup([VW('Satellite', 'jpeg'), VW('Hybrid', 'png')]) },
+  ngii: { name:'국토지리정보원 일반', desc:'등고선·한글 지명 (정부 공식 지도)', crs:NG_CRS, layer: () => NG('korean_map') },
+  ngiib:{ name:'국토지리정보원 큰글씨', desc:'글자가 큰 지도', crs:NG_CRS, layer: () => NG('lowV_map') },
   topo: { name:'등산지도', desc:'등고선 포함 (OpenTopoMap)', layer: () => L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {subdomains:'abc', maxZoom:17, maxNativeZoom:17, attribution:'© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA)'}) },
   osm:  { name:'일반지도', desc:'길·건물 위주 (OpenStreetMap)', layer: () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}) },
   sat:  { name:'위성사진', desc:'항공·위성 영상 (Esri)', layer: () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom:19, maxNativeZoom:18, attribution:'Tiles © Esri'}) },
@@ -162,6 +212,12 @@ let baseLayer = null;
 function setBase(k){
   if (!BASES[k]) k = 'vbase';
   if (baseLayer) map.removeLayer(baseLayer);
+  const crs = BASES[k].crs || L.CRS.EPSG3857;
+  if (map.options.crs !== crs) { // 좌표계를 바꾸고 같은 위치를 다시 그린다 (표시·경로도 함께 다시 계산됨)
+    const c = map.getCenter(), z = map.getZoom();
+    map.options.crs = crs;
+    map._resetView(c, z);
+  }
   baseLayer = BASES[k].layer().addTo(map);
   db.base = k; save();
 }
@@ -192,7 +248,7 @@ function showInfo(html){ const el = $('info'); if (html){ el.innerHTML = html; e
 $('bLayers').onclick = () => {
   openSheet(head('지도 종류') + Object.entries(BASES).map(([k,b]) =>
     `<button class="opt ${db.base===k?'sel':''}" data-k="${k}"><span>${b.name}<small>${b.desc}</small></span></button>`).join('') +
-    `<p class="note">브이월드는 한국 지명이 정확하고, 등산지도는 등고선이 촘촘해요. 한 번 본 지역은 신호가 없어도 다시 볼 수 있어요.</p>`);
+    `<p class="note">브이월드는 한국 지명이 정확하고, 국토지리정보원과 등산지도에는 등고선이 있어요. 한 번 본 지역은 신호가 없어도 다시 볼 수 있어요.</p>`);
   $('sheet').querySelectorAll('.opt').forEach(b => b.onclick = () => { setBase(b.dataset.k); closeSheet(); });
 };
 
