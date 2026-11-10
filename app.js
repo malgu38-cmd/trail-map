@@ -611,6 +611,27 @@ async function runCheck(){
     return `응답 ${f.status} · ${ct} · ${body}`;
   });
   line('브이월드 응답 내용', r[0], `${r[1]} · ${r[2]}ms`);
+  // 국토지리정보원이 실제로 뭐라고 답하는지 (등록 주소가 안 실려 가면 Access_Denied)
+  r = await timed(async () => {
+    const f = await limit(fetch(tests[1][1].replace(/tilecol=(\d+)/, (m, c) => 'tilecol=' + (+c + 1)), { cache:'no-store' }), 12000);
+    const ct = f.headers.get('content-type') || '종류 없음';
+    const body = ct.indexOf('image') === 0 ? (await f.blob()).size + 'B' : (await f.text()).replace(/\s+/g, ' ').slice(0, 90);
+    if (!f.ok || ct.indexOf('image') !== 0) throw new Error(`응답 ${f.status} · ${ct} · ${body}`);
+    return `응답 ${f.status} · ${ct} · ${body}`;
+  });
+  line('국토지리정보원 응답 내용', r[0], `${r[1]} · ${r[2]}ms`);
+  // 브이월드의 다른 주소들도 막혔는지
+  for (const u of ['https://api.vworld.kr/', 'https://www.vworld.kr/', 'https://map.vworld.kr/']) {
+    r = await timed(() => limit(fetch(u, { mode:'no-cors', cache:'no-store' }), 12000).then(() => '연결됨'));
+    line(u.replace('https://', '').replace('/', '') + ' 연결', r[0], `${r[1]} · ${r[2]}ms`);
+  }
+  // 이 기기가 인터넷으로 나가는 위치 (해외 경유·VPN·비공개 릴레이면 한국 정부 서버가 막을 수 있음)
+  r = await timed(async () => {
+    const t = await (await limit(fetch('https://www.cloudflare.com/cdn-cgi/trace', { cache:'no-store' }), 12000)).text();
+    const g = k => (new RegExp('^' + k + '=(.*)$', 'm').exec(t) || [])[1] || '?';
+    return `나라 ${g('loc')} · 주소 ${g('ip')} · 경유지 ${g('colo')} · warp ${g('warp')}`;
+  });
+  line('인터넷 나가는 위치', r[0] ? null : false, `${r[1]} · ${r[2]}ms`);
   r = await timed(async () => { const d = await jsonp({ query:'서울', type:'place' }); if (d === null) throw new Error('응답 없음'); const st = d && d.response && d.response.status; if (st !== 'OK') throw new Error('상태 ' + String(st).slice(0, 30)); return `결과 ${itemsOf(d).length}건`; });
   line('장소 검색', r[0], `${r[1]} · ${r[2]}ms`);
   let sw = '없음', cache = '';
