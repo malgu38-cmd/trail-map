@@ -1,4 +1,5 @@
 'use strict';
+const APP_VER = '2026-11-10 (8)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
 /* 접속 제한 규칙(CSP)에 걸린 요청을 기록해 둔다 → "앱 점검" 화면에서 보여 준다 */
 const cspLog = [];
 document.addEventListener('securitypolicyviolation', e => { if (cspLog.length < 20) cspLog.push(e.violatedDirective + ' → ' + String(e.blockedURI).slice(0, 60)); });
@@ -612,6 +613,7 @@ async function runCheck(){
   const p = xy(L.CRS.EPSG3857, 13), q = xy(NG_CRS, 13), p2 = xy(L.CRS.EPSG3857, 14);
   const ua = navigator.userAgent, os = (/OS (\d+[_\d]*) like Mac/.exec(ua) || /Mac OS X (\d+[_\d]*)/.exec(ua) || [])[1];
   const home = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  line('앱 버전', null, APP_VER);
   line('기기', null, `${/iPhone|iPad/.test(ua) ? '아이폰/아이패드' : '컴퓨터'} · 시스템 ${os ? os.replace(/_/g, '.') : '알 수 없음'} · ${home ? '홈 화면 앱' : '브라우저'} · 인터넷 ${navigator.onLine ? '연결됨' : '끊김'}`);
   const tests = [
     ['브이월드 지도 그림', `https://api.vworld.kr/req/wmts/1.0.0/${VKEY}/Base/13/${p.y}/${p.x}.png`],
