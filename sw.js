@@ -1,8 +1,8 @@
 // 산행지도 오프라인 저장: 앱 파일은 미리 저장, 지도 그림(타일)은 한 번 본 것을 저장해 두고 신호 없을 때 꺼내 씀.
-const APP = 'sanhaeng-app-v4';
+const APP = 'sanhaeng-app-v5';
 const TILES = 'sanhaeng-tiles-v1';
 const MAX_TILES = 4000; // 대략 60~100MB
-const APP_FILES = ['./', 'index.html', 'lib/leaflet.js', 'lib/leaflet.css', 'manifest.json', 'icon-180.png', 'icon-512.png'];
+const APP_FILES = ['./', 'index.html', 'app.js', 'sync.js', 'search.html', 'search-frame.js', 'lib/leaflet.js', 'lib/leaflet.css', 'manifest.json', 'icon-180.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(APP).then(c => c.addAll(APP_FILES)).then(() => self.skipWaiting()));
