@@ -103,7 +103,7 @@ const BASES = {
 const v0 = db.view || { lat:36.5, lng:127.8, z:7 };
 const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true }).setView([v0.lat, v0.lng], v0.z);
 L.control.scale({ imperial:false, position:'bottomleft' }).addTo(map);
-/* 아이폰 홈 화면 앱에서 화면 높이가 실제보다 짧게 잡혀 맨 아래에 흰 띠가 남는 경우, 지도를 실제 화면 높이까지 늘린다 */
+/* 화면 높이 측정(앱 점검 화면에 표시). 2026-11-10 미러링 초반에 맨 아래 흰 띠가 보였으나 재현되지 않아 보정은 넣지 않았다. */
 const isHomeApp = () => navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 function screenInfo(){
   const probe = document.createElement('div');
@@ -116,17 +116,6 @@ function screenInfo(){
   out.inner = window.innerHeight; out.doc = document.documentElement.clientHeight;
   return out;
 }
-function fitMap(){
-  const el = document.getElementById('map'), i = screenInfo();
-  const gap = i.screen - i.inner;
-  if (isHomeApp() && gap > 1 && gap < 140) { el.style.bottom = 'auto'; el.style.height = i.screen + 'px'; }
-  else { el.style.bottom = ''; el.style.height = ''; }
-  map.invalidateSize({ animate:false });
-}
-fitMap();
-window.addEventListener('resize', fitMap);
-window.addEventListener('orientationchange', () => setTimeout(fitMap, 300));
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(fitMap, 200); });
 let baseLayer = null;
 /* 지도 그림이 깨져서 오면 저장해 둔 것을 지우고 한 번 다시 받는다.
    (서버가 '거부' 같은 글자를 보냈는데 그것이 그림 자리에 저장돼 버린 경우를 스스로 고친다) */
