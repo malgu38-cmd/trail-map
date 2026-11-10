@@ -103,6 +103,30 @@ const BASES = {
 const v0 = db.view || { lat:36.5, lng:127.8, z:7 };
 const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true }).setView([v0.lat, v0.lng], v0.z);
 L.control.scale({ imperial:false, position:'bottomleft' }).addTo(map);
+/* 아이폰 홈 화면 앱에서 화면 높이가 실제보다 짧게 잡혀 맨 아래에 흰 띠가 남는 경우, 지도를 실제 화면 높이까지 늘린다 */
+const isHomeApp = () => navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+function screenInfo(){
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:100vh;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box';
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe), out = { vh:probe.offsetHeight, top:parseFloat(cs.paddingTop) || 0, bottom:parseFloat(cs.paddingBottom) || 0 };
+  probe.remove();
+  const portrait = window.innerHeight >= window.innerWidth;
+  out.screen = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  out.inner = window.innerHeight; out.doc = document.documentElement.clientHeight;
+  return out;
+}
+function fitMap(){
+  const el = document.getElementById('map'), i = screenInfo();
+  const gap = i.screen - i.inner;
+  if (isHomeApp() && gap > 1 && gap < 140) { el.style.bottom = 'auto'; el.style.height = i.screen + 'px'; }
+  else { el.style.bottom = ''; el.style.height = ''; }
+  map.invalidateSize({ animate:false });
+}
+fitMap();
+window.addEventListener('resize', fitMap);
+window.addEventListener('orientationchange', () => setTimeout(fitMap, 300));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(fitMap, 200); });
 let baseLayer = null;
 /* 지도 그림이 깨져서 오면 저장해 둔 것을 지우고 한 번 다시 받는다.
    (서버가 '거부' 같은 글자를 보냈는데 그것이 그림 자리에 저장돼 버린 경우를 스스로 고친다) */
@@ -650,6 +674,8 @@ async function runCheck(){
   let sw = '없음', cache = '';
   try { sw = navigator.serviceWorker && navigator.serviceWorker.controller ? '켜짐' : '꺼짐'; const ks = await caches.keys(); const n = ks.includes('sanhaeng-tiles-v1') ? (await (await caches.open('sanhaeng-tiles-v1')).keys()).length : 0; cache = ` · ${ks.join(', ')} · 저장된 그림 ${n}장`; } catch (e) { cache = ' · 저장소 확인 실패'; }
   line('오프라인 저장', null, sw + cache);
+  const si = screenInfo();
+  line('화면 높이', null, `기기 ${si.screen} · 앱이 받은 높이 ${si.inner} · 문서 ${si.doc} · 100vh ${si.vh} · 위 여백 ${si.top} · 아래 여백 ${si.bottom} · 지도 ${$('map').offsetHeight}`);
   line('동기화', null, sy.token ? `연결됨 · 상태 ${syState}` : '연결 안 함');
   line('접속 제한에 걸린 요청', cspLog.length ? false : true, cspLog.length ? cspLog.join(' / ') : '없음');
   openSheet(head('앱 점검') + rows.join('') + `<p class="note">${syTime(Date.now())} 점검. 안 되는 항목이 있으면 이 화면을 캡처해 두세요.</p><button class="sub" id="ckAgain">다시 점검</button>`);
