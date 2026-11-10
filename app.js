@@ -1,4 +1,7 @@
 'use strict';
+/* 접속 제한 규칙(CSP)에 걸린 요청을 기록해 둔다 → "앱 점검" 화면에서 보여 준다 */
+const cspLog = [];
+document.addEventListener('securitypolicyviolation', e => { if (cspLog.length < 20) cspLog.push(e.violatedDirective + ' → ' + String(e.blockedURI).slice(0, 60)); });
 /* ---------- 아이콘 (Lucide, 인라인) ---------- */
 const S = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 const ICON = {
@@ -312,7 +315,9 @@ function openList(){
     <h3>백업</h3>
     <button class="sub" id="bExport">백업 파일로 내보내기</button>
     <button class="sub" id="bImport">백업 파일 불러오기</button>
-    <p class="note">표시와 경로는 이 기기에 저장돼요. 동기화를 켜지 않았다면 사파리 방문 기록·데이터를 지울 때 함께 사라지니 가끔 백업해 두세요.</p>`);
+    <p class="note">표시와 경로는 이 기기에 저장돼요. 동기화를 켜지 않았다면 사파리 방문 기록·데이터를 지울 때 함께 사라지니 가끔 백업해 두세요.</p>
+    <h3>점검</h3>
+    <button class="sub" id="bCheck">앱 점검 (지도·검색이 안 될 때)</button>`);
   const sh = $('sheet');
   sh.querySelectorAll('[data-go-m]').forEach(b => b.onclick = () => { const m = db.marks.find(x => x.id === b.dataset.goM); if (!m) return openList(); closeSheet(); map.setView([m.lat, m.lng], Math.max(map.getZoom(), 15)); });
   sh.querySelectorAll('[data-del-m]').forEach(b => b.onclick = () => { removeMark(b.dataset.delM); openList(); });
@@ -324,6 +329,7 @@ function openList(){
     a.download = `산행지도_백업_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); a.remove();
   };
   $('bImport').onclick = () => $('backupFile').click();
+  $('bCheck').onclick = runCheck;
   bindSync();
 }
 $('backupFile').onchange = async e => {
@@ -566,6 +572,55 @@ $('bList').classList.toggle('warn', false);
 if (sy.token) setTimeout(syncRun, 1200);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && sy.token && (syDirty || Date.now() - syLastRun > 30000)) syncRun(); });
 window.addEventListener('online', () => { if (sy.token) syncRun(); });
+
+/* ---------- 앱 점검: 지도·검색이 안 될 때 어디서 막혔는지 이 기기에서 직접 확인 ---------- */
+async function runCheck(){
+  openSheet(head('앱 점검') + '<p class="empty">점검하는 중… 20초쯤 걸릴 수 있어요.</p>');
+  const rows = [];
+  const line = (name, ok, detail) => rows.push(`<div class="row"><span class="name">${esc(name)}<small>${esc(detail || '')}</small></span><b style="white-space:nowrap;color:${ok === null ? 'var(--gray)' : ok ? '#0a8f5a' : 'var(--red)'}">${ok === null ? '' : ok ? '정상' : '안 됨'}</b></div>`);
+  const limit = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('시간 초과')), ms))]);
+  const timed = async fn => { const t = Date.now(); try { return [true, String(await fn()), Date.now() - t]; } catch (e) { return [false, ((e && e.name) || '오류') + ': ' + ((e && e.message) || e), Date.now() - t]; } };
+  const img = url => limit(new Promise((res, rej) => { const i = new Image(); i.onload = () => res('받음'); i.onerror = () => rej(new Error('그림을 받지 못함')); i.src = url; }), 12000);
+  const ll = L.latLng(35.5 + Math.random() * 2, 127 + Math.random() * 1.5); // 저장돼 있지 않을 만한 곳을 새로 받아 본다
+  const xy = (crs, z) => crs.latLngToPoint(ll, z).divideBy(256).floor();
+  const p = xy(L.CRS.EPSG3857, 13), q = xy(NG_CRS, 13), p2 = xy(L.CRS.EPSG3857, 14);
+  const ua = navigator.userAgent, os = (/OS (\d+[_\d]*) like Mac/.exec(ua) || /Mac OS X (\d+[_\d]*)/.exec(ua) || [])[1];
+  const home = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  line('기기', null, `${/iPhone|iPad/.test(ua) ? '아이폰/아이패드' : '컴퓨터'} · 시스템 ${os ? os.replace(/_/g, '.') : '알 수 없음'} · ${home ? '홈 화면 앱' : '브라우저'} · 인터넷 ${navigator.onLine ? '연결됨' : '끊김'}`);
+  const tests = [
+    ['브이월드 지도 그림', `https://api.vworld.kr/req/wmts/1.0.0/${VKEY}/Base/13/${p.y}/${p.x}.png`],
+    ['국토지리정보원 지도 그림', `https://map.ngii.go.kr/openapi/Gettile.do?apikey=${NKEY}&service=WMTS&request=GetTile&version=1.0.0&layer=korean_map&style=korean&format=image/png&tilematrixset=korean&tilematrix=L12&tilerow=${q.y}&tilecol=${q.x}`],
+    ['등산지도 그림', `https://a.tile.opentopomap.org/13/${p.x}/${p.y}.png`],
+    ['일반지도 그림', `https://tile.openstreetmap.org/13/${p.x}/${p.y}.png`],
+    ['위성사진 그림', `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/13/${p.y}/${p.x}`],
+  ];
+  const res = await Promise.all(tests.map(t => timed(() => img(t[1]))));
+  tests.forEach((t, i) => line(t[0], res[i][0], `${res[i][1]} · ${res[i][2]}ms`));
+  // 서버까지 연결 자체가 되는지 (오프라인 저장 장치를 거치지 않는 요청)
+  const vs = `https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=1&page=1&format=json&errorformat=json&type=place&query=${encodeURIComponent('서울')}&key=${VKEY}`;
+  let r = await timed(() => limit(fetch(vs, { mode:'no-cors', cache:'no-store' }), 12000).then(() => '연결됨'));
+  line('브이월드 서버 연결', r[0], `${r[1]} · ${r[2]}ms`);
+  r = await timed(() => limit(fetch('https://map.ngii.go.kr/', { mode:'no-cors', cache:'no-store' }), 12000).then(() => '연결됨'));
+  line('국토지리정보원 서버 연결', r[0], `${r[1]} · ${r[2]}ms`);
+  // 브이월드가 실제로 뭐라고 답하는지 (응답 번호와 내용)
+  r = await timed(async () => {
+    const f = await limit(fetch(`https://api.vworld.kr/req/wmts/1.0.0/${VKEY}/Base/14/${p2.y}/${p2.x}.png`, { cache:'no-store' }), 12000);
+    const ct = f.headers.get('content-type') || '종류 없음';
+    const body = ct.indexOf('image') === 0 ? (await f.blob()).size + 'B' : (await f.text()).replace(/\s+/g, ' ').slice(0, 90);
+    if (!f.ok || ct.indexOf('image') !== 0) throw new Error(`응답 ${f.status} · ${ct} · ${body}`);
+    return `응답 ${f.status} · ${ct} · ${body}`;
+  });
+  line('브이월드 응답 내용', r[0], `${r[1]} · ${r[2]}ms`);
+  r = await timed(async () => { const d = await jsonp({ query:'서울', type:'place' }); if (d === null) throw new Error('응답 없음'); const st = d && d.response && d.response.status; if (st !== 'OK') throw new Error('상태 ' + String(st).slice(0, 30)); return `결과 ${itemsOf(d).length}건`; });
+  line('장소 검색', r[0], `${r[1]} · ${r[2]}ms`);
+  let sw = '없음', cache = '';
+  try { sw = navigator.serviceWorker && navigator.serviceWorker.controller ? '켜짐' : '꺼짐'; const ks = await caches.keys(); const n = ks.includes('sanhaeng-tiles-v1') ? (await (await caches.open('sanhaeng-tiles-v1')).keys()).length : 0; cache = ` · ${ks.join(', ')} · 저장된 그림 ${n}장`; } catch (e) { cache = ' · 저장소 확인 실패'; }
+  line('오프라인 저장', null, sw + cache);
+  line('동기화', null, sy.token ? `연결됨 · 상태 ${syState}` : '연결 안 함');
+  line('접속 제한에 걸린 요청', cspLog.length ? false : true, cspLog.length ? cspLog.join(' / ') : '없음');
+  openSheet(head('앱 점검') + rows.join('') + `<p class="note">${syTime(Date.now())} 점검. 안 되는 항목이 있으면 이 화면을 캡처해 두세요.</p><button class="sub" id="ckAgain">다시 점검</button>`);
+  $('ckAgain').onclick = runCheck;
+}
 
 /* ---------- 오프라인 (본 지역 지도 저장) ---------- */
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
