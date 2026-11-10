@@ -104,6 +104,17 @@ const v0 = db.view || { lat:36.5, lng:127.8, z:7 };
 const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true }).setView([v0.lat, v0.lng], v0.z);
 L.control.scale({ imperial:false, position:'bottomleft' }).addTo(map);
 let baseLayer = null;
+/* 지도 그림이 깨져서 오면 저장해 둔 것을 지우고 한 번 다시 받는다.
+   (서버가 '거부' 같은 글자를 보냈는데 그것이 그림 자리에 저장돼 버린 경우를 스스로 고친다) */
+function watchTiles(layer){
+  if (layer.eachLayer) { layer.eachLayer(watchTiles); return; }
+  layer.on('tileerror', e => {
+    const t = e.tile;
+    if (!t || t._again || !t.src || !('caches' in window)) return;
+    t._again = true; const url = t.src;
+    caches.open('sanhaeng-tiles-v1').then(c => c.delete(url)).then(() => { t.src = url; }).catch(() => {});
+  });
+}
 function setBase(k){
   if (!BASES[k]) k = 'vbase';
   if (baseLayer) map.removeLayer(baseLayer);
@@ -113,7 +124,9 @@ function setBase(k){
     map.options.crs = crs;
     map._resetView(c, z);
   }
-  baseLayer = BASES[k].layer().addTo(map);
+  baseLayer = BASES[k].layer();
+  watchTiles(baseLayer);
+  baseLayer.addTo(map);
   db.base = k; save();
 }
 setBase(db.base);
