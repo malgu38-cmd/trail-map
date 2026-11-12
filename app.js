@@ -1,5 +1,5 @@
 'use strict';
-const APP_VER = '2026-11-13 (10)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
+const APP_VER = '2026-11-13 (11)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
 /* 접속 제한 규칙(CSP)에 걸린 요청을 기록해 둔다 → "앱 점검" 화면에서 보여 준다 */
 const cspLog = [];
 document.addEventListener('securitypolicyviolation', e => { if (cspLog.length < 20) cspLog.push(e.violatedDirective + ' → ' + String(e.blockedURI).slice(0, 60)); });
@@ -17,6 +17,8 @@ const ICON = {
   toilet: S('<path d="M7 12h13a1 1 0 0 1 1 1 5 5 0 0 1-5 5h-.598a.5.5 0 0 0-.424.765l1.544 2.47a.5.5 0 0 1-.424.765H5.402a.5.5 0 0 1-.424-.765L7 18"/><path d="M8 18a5 5 0 0 1-5-5V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8"/>'),
   food: S('<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>'),
   waves: S('<path d="M2 12q2.5 2 5 0t5 0 5 0 5 0"/><path d="M2 19q2.5 2 5 0t5 0 5 0 5 0"/><path d="M2 5q2.5 2 5 0t5 0 5 0 5 0"/>'),
+  house: S('<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  building: S('<path d="M10 12h4"/><path d="M10 8h4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/>'),
   route: S('<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>'),
 };
 const TYPES = [ // c = 핀 색, f = 아이콘·글씨 색(기본 흰색)
@@ -29,7 +31,9 @@ const TYPES = [ // c = 핀 색, f = 아이콘·글씨 색(기본 흰색)
   {k:'toilet', label:'화장실', icon:'toilet', c:'#00ACC1'},
   {k:'food', label:'식당·매점', icon:'food', c:'#D81B60'},
   {k:'valley', label:'계곡·경치', icon:'waves', c:'#7CB342'},
-  {k:'etc', label:'기타', icon:'pin', c:'#555555'},
+  {k:'home', label:'집', icon:'house', c:'#F57C00'},
+  {k:'work', label:'회사', icon:'building', c:'#37474F'},
+  {k:'etc', label:'기타', icon:'pin', c:'#9E9E9E'},
 ];
 const typeOf = k => TYPES.find(t => t.k === k) || TYPES.find(t => t.k === 'etc');
 
@@ -227,9 +231,11 @@ function drawMarks(){
     mk.bindPopup(() => {
       const d = document.createElement('div');
       d.innerHTML = `<b>${esc(m.name || typeOf(m.type).label)}</b><br><span style="color:#787878;font-size:18px">${typeOf(m.type).label} · ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</span><br>`;
+      const e = document.createElement('button'); e.textContent = '종류·이름 바꾸기';
+      e.onclick = () => { map.closePopup(); addMarkSheet([m.lat, m.lng], m); };
       const b = document.createElement('button'); b.textContent = '이 표시 지우기';
       b.onclick = () => removeMark(m.id);
-      d.appendChild(b); return d;
+      d.appendChild(e); d.appendChild(document.createTextNode(' ')); d.appendChild(b); return d;
     });
   });
 }
@@ -242,18 +248,24 @@ function updLabels(){
 }
 map.on('zoomend moveend', updLabels); updLabels();
 $('bPin').onclick = () => { if (mode === 'pin') setMode(null); else setMode('pin', '표시할 곳을 지도에서 누르세요'); };
-function addMarkSheet(latlng){
-  let sel = 'etc';
-  openSheet(head('표시 추가') +
+/* old가 있으면 그 표시의 종류·이름 바꾸기. 동기화는 같은 번호의 고침을 다른 기기에 전하지 못하므로
+   옛 표시를 지운 것으로 기록하고 같은 자리에 새 번호로 다시 만든다 (다른 기기에는 '지움 + 추가'로 전달됨) */
+function addMarkSheet(latlng, old){
+  let sel = old ? typeOf(old.type).k : 'etc';
+  openSheet(head(old ? '종류·이름 바꾸기' : '표시 추가') +
     `<div class="types">${TYPES.map(t => `<button data-k="${t.k}" class="${t.k===sel?'sel':''}"><span class="ti" style="background:${t.c};color:${t.f||'#fff'}">${ICON[t.icon]}</span>${t.label}</button>`).join('')}</div>
      <input type="text" id="mName" placeholder="이름 (예: 계곡 물 뜨는 곳)" maxlength="40">
      <button class="big" id="mSave">저장</button><button class="sub" data-close>취소</button>`);
   $('sheet').querySelectorAll('.types button').forEach(b => b.onclick = () => {
     sel = b.dataset.k; $('sheet').querySelectorAll('.types button').forEach(x => x.classList.toggle('sel', x === b)); });
+  if (old) $('mName').value = old.name || '';
   $('mSave').onclick = () => {
     const ll = L.latLng(latlng).wrap();
     const m = SyncCore.cleanMark({ id:SyncCore.newId(), type:sel, name:$('mName').value, lat:ll.lat, lng:ll.lng });
-    if (m) { db.marks.push(m); saveData(); drawMarks(); }
+    if (m) {
+      if (old) { db.marks = db.marks.filter(x => x.id !== old.id); db.gone['m:' + old.id] = Date.now(); }
+      db.marks.push(m); saveData(); drawMarks();
+    }
     closeSheet(); setMode(null);
   };
 }
