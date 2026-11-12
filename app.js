@@ -1,5 +1,5 @@
 'use strict';
-const APP_VER = '2026-11-10 (8)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
+const APP_VER = '2026-11-13 (9)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
 /* 접속 제한 규칙(CSP)에 걸린 요청을 기록해 둔다 → "앱 점검" 화면에서 보여 준다 */
 const cspLog = [];
 document.addEventListener('securitypolicyviolation', e => { if (cspLog.length < 20) cspLog.push(e.violatedDirective + ' → ' + String(e.blockedURI).slice(0, 60)); });
@@ -13,17 +13,25 @@ const ICON = {
   mountain: S('<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>'),
   flag: S('<path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/>'),
   pin: S('<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>'),
+  alert: S('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>'),
+  toilet: S('<path d="M7 12h13a1 1 0 0 1 1 1 5 5 0 0 1-5 5h-.598a.5.5 0 0 0-.424.765l1.544 2.47a.5.5 0 0 1-.424.765H5.402a.5.5 0 0 1-.424-.765L7 18"/><path d="M8 18a5 5 0 0 1-5-5V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8"/>'),
+  food: S('<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>'),
+  waves: S('<path d="M2 12q2.5 2 5 0t5 0 5 0 5 0"/><path d="M2 19q2.5 2 5 0t5 0 5 0 5 0"/><path d="M2 5q2.5 2 5 0t5 0 5 0 5 0"/>'),
   route: S('<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>'),
 };
-const TYPES = [
-  {k:'camp', label:'야영·대피소', icon:'tent'},
-  {k:'water', label:'물', icon:'droplet'},
-  {k:'park', label:'주차', icon:'car'},
-  {k:'peak', label:'정상·전망', icon:'mountain'},
-  {k:'start', label:'출발·도착', icon:'flag'},
-  {k:'etc', label:'기타', icon:'pin'},
+const TYPES = [ // c = 핀 색, f = 아이콘·글씨 색(기본 흰색)
+  {k:'camp', label:'야영·대피소', icon:'tent', c:'#1B5E20'},
+  {k:'water', label:'물', icon:'droplet', c:'#1565C0'},
+  {k:'park', label:'주차', icon:'car', c:'#5E35B1'},
+  {k:'peak', label:'정상·전망', icon:'mountain', c:'#8D5524'},
+  {k:'start', label:'출발·도착', icon:'flag', c:'#E83828'},
+  {k:'danger', label:'위험·주의', icon:'alert', c:'#FFC107', f:'#222'},
+  {k:'toilet', label:'화장실', icon:'toilet', c:'#00ACC1'},
+  {k:'food', label:'식당·매점', icon:'food', c:'#D81B60'},
+  {k:'valley', label:'계곡·경치', icon:'waves', c:'#7CB342'},
+  {k:'etc', label:'기타', icon:'pin', c:'#555555'},
 ];
-const typeOf = k => TYPES.find(t => t.k === k) || TYPES[5];
+const typeOf = k => TYPES.find(t => t.k === k) || TYPES.find(t => t.k === 'etc');
 
 /* ---------- 저장 (기기에 먼저 저장하고, 동기화를 켜면 다른 기기와 맞춘다) ---------- */
 const KEY = 'sanhaeng-map-v1';
@@ -210,12 +218,12 @@ map.on('dragstart', () => { if (follow) { follow = false; $('bLocate').classList
 
 /* ---------- 내 표시(마커) ---------- */
 const markLayer = L.layerGroup().addTo(map);
-function pinIcon(k){ return L.divIcon({ className:'', html:`<div class="pin">${ICON[typeOf(k).icon]}</div>`, iconSize:[44,44], iconAnchor:[22,44], popupAnchor:[0,-40] }); }
+function pinIcon(k){ const t = typeOf(k); return L.divIcon({ className:'', html:`<div class="pin" style="background:${t.c};color:${t.f||'#fff'}">${ICON[t.icon]}</div>`, iconSize:[44,44], iconAnchor:[22,44], popupAnchor:[0,-40] }); }
 function drawMarks(){
   markLayer.clearLayers();
   db.marks.forEach(m => {
     const mk = L.marker([m.lat, m.lng], { icon:pinIcon(m.type) }).addTo(markLayer);
-    if (m.name) mk.bindTooltip(esc(m.name), { permanent:true, direction:'right', offset:[14,-26], className:'mlabel' });
+    if (m.name) mk.bindTooltip(`<span style="background:${typeOf(m.type).c};color:${typeOf(m.type).f||'#fff'}">${esc(m.name)}</span>`, { permanent:true, direction:'right', offset:[14,-26], className:'mlabel' });
     mk.bindPopup(() => {
       const d = document.createElement('div');
       d.innerHTML = `<b>${esc(m.name || typeOf(m.type).label)}</b><br><span style="color:#787878;font-size:18px">${typeOf(m.type).label} · ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</span><br>`;
@@ -226,11 +234,18 @@ function drawMarks(){
   });
 }
 drawMarks();
+/* 이름 글씨는 충분히 확대했을 때만(화면 1점 = 10m 이하, 대략 축척 500m 막대) 보인다. 좌표계가 바뀌어도 맞도록 확대 단계가 아니라 실제 거리로 판단 */
+function updLabels(){
+  const c = map.getCenter(), p = map.latLngToContainerPoint(c);
+  const mpp = map.distance(c, map.containerPointToLatLng(p.add([100, 0]))) / 100;
+  map.getContainer().classList.toggle('nolabel', !(mpp <= 10));
+}
+map.on('zoomend moveend', updLabels); updLabels();
 $('bPin').onclick = () => { if (mode === 'pin') setMode(null); else setMode('pin', '표시할 곳을 지도에서 누르세요'); };
 function addMarkSheet(latlng){
   let sel = 'etc';
   openSheet(head('표시 추가') +
-    `<div class="types">${TYPES.map(t => `<button data-k="${t.k}" class="${t.k===sel?'sel':''}">${ICON[t.icon]}${t.label}</button>`).join('')}</div>
+    `<div class="types">${TYPES.map(t => `<button data-k="${t.k}" class="${t.k===sel?'sel':''}"><span class="ti" style="background:${t.c};color:${t.f||'#fff'}">${ICON[t.icon]}</span>${t.label}</button>`).join('')}</div>
      <input type="text" id="mName" placeholder="이름 (예: 계곡 물 뜨는 곳)" maxlength="40">
      <button class="big" id="mSave">저장</button><button class="sub" data-close>취소</button>`);
   $('sheet').querySelectorAll('.types button').forEach(b => b.onclick = () => {

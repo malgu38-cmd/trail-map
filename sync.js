@@ -6,7 +6,7 @@
 const SyncCore = (() => {
   const ID = /^[a-z0-9]{1,32}$/i;
   const GONE_KEY = /^[mt]:[a-z0-9]{1,32}$/i;
-  const TYPES = ['camp', 'water', 'park', 'peak', 'start', 'etc'];
+  const TYPES = ['camp', 'water', 'park', 'peak', 'start', 'danger', 'toilet', 'food', 'valley', 'etc'];
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const isNum = (v, lo, hi) => typeof v === 'number' && isFinite(v) && v >= lo && v <= hi;
   const text = (v, max) => (typeof v === 'string' ? v : '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
