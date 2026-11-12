@@ -1,5 +1,5 @@
 'use strict';
-const APP_VER = '2026-11-13 (11)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
+const APP_VER = '2026-11-13 (12)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
 /* 접속 제한 규칙(CSP)에 걸린 요청을 기록해 둔다 → "앱 점검" 화면에서 보여 준다 */
 const cspLog = [];
 document.addEventListener('securitypolicyviolation', e => { if (cspLog.length < 20) cspLog.push(e.violatedDirective + ' → ' + String(e.blockedURI).slice(0, 60)); });
@@ -45,6 +45,10 @@ db.marks = SyncCore.cleanList(db.marks, SyncCore.cleanMark);   // 저장돼 있�
 db.tracks = SyncCore.cleanList(db.tracks, SyncCore.cleanTrack);
 db.gone = SyncCore.cleanGone(db.gone);                          // 지운 기록: 다른 기기에서도 지워지게 남겨 둔다
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+/* 감추기: 이 기기 화면에서만 안 보이게 한다(동기화하지 않음). 키 = 'm:번호' / 't:번호' */
+db.hidden = (db.hidden && typeof db.hidden === 'object' && !Array.isArray(db.hidden)) ? db.hidden : {};
+const isHidden = (pre, id) => hasOwn(db.hidden, pre + id);
+function setHidden(pre, id, on){ if (on) db.hidden[pre + id] = 1; else delete db.hidden[pre + id]; save(); pre === 'm:' ? drawMarks() : drawTracks(); }
 function save(quiet){
   try { localStorage.setItem(KEY, JSON.stringify(db)); return true; }
   catch(e){ if (!quiet) alertSheet('저장 공간이 부족해서 저장하지 못했어요. 목록에서 안 쓰는 GPX를 지워 주세요.'); return false; }
@@ -226,16 +230,19 @@ function pinIcon(k){ const t = typeOf(k); return L.divIcon({ className:'', html:
 function drawMarks(){
   markLayer.clearLayers();
   db.marks.forEach(m => {
+    if (isHidden('m:', m.id)) return;
     const mk = L.marker([m.lat, m.lng], { icon:pinIcon(m.type) }).addTo(markLayer);
     if (m.name) mk.bindTooltip(`<span style="background:${typeOf(m.type).c};color:${typeOf(m.type).f||'#fff'}">${esc(m.name)}</span>`, { permanent:true, direction:'right', offset:[10,-19], className:'mlabel' });
     mk.bindPopup(() => {
       const d = document.createElement('div');
       d.innerHTML = `<b>${esc(m.name || typeOf(m.type).label)}</b><br><span style="color:#787878;font-size:18px">${typeOf(m.type).label} · ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</span><br>`;
-      const e = document.createElement('button'); e.textContent = '종류·이름 바꾸기';
+      const e = document.createElement('button'); e.textContent = '고치기';
       e.onclick = () => { map.closePopup(); addMarkSheet([m.lat, m.lng], m); };
-      const b = document.createElement('button'); b.textContent = '이 표시 지우기';
+      const h = document.createElement('button'); h.textContent = '감추기';
+      h.onclick = () => { map.closePopup(); setHidden('m:', m.id, true); };
+      const b = document.createElement('button'); b.textContent = '지우기';
       b.onclick = () => removeMark(m.id);
-      d.appendChild(e); d.appendChild(document.createTextNode(' ')); d.appendChild(b); return d;
+      [e, h, b].forEach(x => { d.appendChild(x); d.appendChild(document.createTextNode(' ')); }); return d;
     });
   });
 }
@@ -252,7 +259,7 @@ $('bPin').onclick = () => { if (mode === 'pin') setMode(null); else setMode('pin
    옛 표시를 지운 것으로 기록하고 같은 자리에 새 번호로 다시 만든다 (다른 기기에는 '지움 + 추가'로 전달됨) */
 function addMarkSheet(latlng, old){
   let sel = old ? typeOf(old.type).k : 'etc';
-  openSheet(head(old ? '종류·이름 바꾸기' : '표시 추가') +
+  openSheet(head(old ? '표시 고치기' : '표시 추가') +
     `<div class="types">${TYPES.map(t => `<button data-k="${t.k}" class="${t.k===sel?'sel':''}"><span class="ti" style="background:${t.c};color:${t.f||'#fff'}">${ICON[t.icon]}</span>${t.label}</button>`).join('')}</div>
      <input type="text" id="mName" placeholder="이름 (예: 계곡 물 뜨는 곳)" maxlength="40">
      <button class="big" id="mSave">저장</button><button class="sub" data-close>취소</button>`);
@@ -260,10 +267,14 @@ function addMarkSheet(latlng, old){
     sel = b.dataset.k; $('sheet').querySelectorAll('.types button').forEach(x => x.classList.toggle('sel', x === b)); });
   if (old) $('mName').value = old.name || '';
   $('mSave').onclick = () => {
+    if (old && sel === old.type && $('mName').value.trim() === (old.name || '')) { closeSheet(); return; } // 바뀐 게 없으면 그대로
     const ll = L.latLng(latlng).wrap();
     const m = SyncCore.cleanMark({ id:SyncCore.newId(), type:sel, name:$('mName').value, lat:ll.lat, lng:ll.lng });
     if (m) {
-      if (old) { db.marks = db.marks.filter(x => x.id !== old.id); db.gone['m:' + old.id] = Date.now(); }
+      if (old) {
+        db.marks = db.marks.filter(x => x.id !== old.id); db.gone['m:' + old.id] = Date.now();
+        if (isHidden('m:', old.id)) { delete db.hidden['m:' + old.id]; db.hidden['m:' + m.id] = 1; }
+      }
       db.marks.push(m); saveData(); drawMarks();
     }
     closeSheet(); setMode(null);
@@ -332,6 +343,7 @@ function statText(t){
 function drawTracks(){
   trackLayer.clearLayers();
   db.tracks.forEach((t, i) => {
+    if (isHidden('t:', t.id)) return;
     const col = TRACK_COLORS[i % TRACK_COLORS.length];
     if (t.coords.length > 1) {
       L.polyline(t.coords.map(c => [c[0], c[1]]), { color:'#fff', weight:9, opacity:.85 }).addTo(trackLayer);
@@ -341,6 +353,24 @@ function drawTracks(){
     t.wpts.forEach(w => L.circleMarker([w.lat, w.lng], { radius:8, color:'#fff', weight:3, fillColor:col, fillOpacity:1 })
       .addTo(trackLayer).bindPopup(`<b>${esc(w.name || '지점')}</b><br><span style="font-size:18px;color:#787878">${esc(t.name)}</span>`));
   });
+}
+/* 경로 이름 고치기: 표시와 같은 이유로 옛 경로를 지운 것으로 기록하고 새 번호로 다시 만든다 */
+function editTrackSheet(t){
+  openSheet(head('경로 이름 고치기') + `<input type="text" id="tName" maxlength="60">
+     <button class="big" id="tSave">저장</button><button class="sub" data-close>취소</button>`);
+  $('tName').value = t.name;
+  $('tSave').onclick = () => {
+    if ($('tName').value.trim() === t.name) return openList();
+    const nt = SyncCore.cleanTrack(Object.assign({}, t, { id:SyncCore.newId(), name:$('tName').value }));
+    if (nt) {
+      const i = db.tracks.findIndex(x => x.id === t.id);
+      if (i >= 0) db.tracks[i] = nt; else db.tracks.push(nt);   // 같은 자리에 넣어 경로 색이 그대로 유지되게
+      db.gone['t:' + t.id] = Date.now();
+      if (isHidden('t:', t.id)) { delete db.hidden['t:' + t.id]; db.hidden['t:' + nt.id] = 1; }
+      saveData(); drawTracks();
+    }
+    openList();
+  };
 }
 function trackBounds(t){ const all = t.coords.map(c => [c[0], c[1]]).concat(t.wpts.map(w => [w.lat, w.lng])); return L.latLngBounds(all); }
 drawTracks();
@@ -360,10 +390,13 @@ $('gpxFile').onchange = async e => {
 /* ---------- 목록 ---------- */
 $('bList').onclick = openList;
 function openList(){
-  const ms = db.marks.map(m => `<div class="row"><span class="name">${esc(m.name || typeOf(m.type).label)}<small>${typeOf(m.type).label}</small></span>
-      <button data-go-m="${esc(m.id)}">보기</button><button class="del" data-del-m="${esc(m.id)}">지우기</button></div>`).join('') || '<div class="empty">아직 없어요. 오른쪽 핀 버튼으로 추가하세요.</div>';
-  const ts = db.tracks.map(t => `<div class="row"><span class="name">${esc(t.name)}<small>${statText(t)}</small></span>
-      <button data-go-t="${esc(t.id)}">보기</button><button class="del" data-del-t="${esc(t.id)}">지우기</button></div>`).join('') || '<div class="empty">아직 없어요. 경로 버튼으로 GPX 파일을 불러오세요.</div>';
+  const btns = (pre, id) => `<div class="btns"><button data-go="${pre}${esc(id)}">보기</button><button data-edit="${pre}${esc(id)}">고치기</button>`
+      + `<button data-hide="${pre}${esc(id)}">${isHidden(pre, id) ? '보이기' : '감추기'}</button><button class="del" data-del="${pre}${esc(id)}">지우기</button></div>`;
+  const hid = (pre, id) => isHidden(pre, id) ? ' hid' : '';
+  const ms = db.marks.map(m => `<div class="row${hid('m:', m.id)}"><span class="name">${esc(m.name || typeOf(m.type).label)}<small>${typeOf(m.type).label}${isHidden('m:', m.id) ? ' · 감춤' : ''}</small></span>
+      ${btns('m:', m.id)}</div>`).join('') || '<div class="empty">아직 없어요. 오른쪽 핀 버튼으로 추가하세요.</div>';
+  const ts = db.tracks.map(t => `<div class="row${hid('t:', t.id)}"><span class="name">${esc(t.name)}<small>${statText(t)}${isHidden('t:', t.id) ? ' · 감춤' : ''}</small></span>
+      ${btns('t:', t.id)}</div>`).join('') || '<div class="empty">아직 없어요. 경로 버튼으로 GPX 파일을 불러오세요.</div>';
   openSheet(head('내 목록') + `<h3>내 표시 (${db.marks.length})</h3>${ms}<h3>GPX 경로 (${db.tracks.length})</h3>${ts}
     <h3>기기 간 동기화</h3><div id="syBox">${syncHtml()}</div>
     <h3>백업</h3>
@@ -373,10 +406,20 @@ function openList(){
     <h3>점검</h3>
     <button class="sub" id="bCheck">앱 점검 (지도·검색이 안 될 때)</button>`);
   const sh = $('sheet');
-  sh.querySelectorAll('[data-go-m]').forEach(b => b.onclick = () => { const m = db.marks.find(x => x.id === b.dataset.goM); if (!m) return openList(); closeSheet(); map.setView([m.lat, m.lng], Math.max(map.getZoom(), 15)); });
-  sh.querySelectorAll('[data-del-m]').forEach(b => b.onclick = () => { removeMark(b.dataset.delM); openList(); });
-  sh.querySelectorAll('[data-go-t]').forEach(b => b.onclick = () => { const t = db.tracks.find(x => x.id === b.dataset.goT); if (!t) return openList(); closeSheet(); map.fitBounds(trackBounds(t), { padding:[40,40] }); showInfo(`<b>${esc(t.name)}</b><br>${statText(t)}`); });
-  sh.querySelectorAll('[data-del-t]').forEach(b => b.onclick = () => { removeTrack(b.dataset.delT); openList(); });
+  const pick = v => { const pre = v.slice(0, 2), id = v.slice(2); return { pre, id, item: (pre === 'm:' ? db.marks : db.tracks).find(x => x.id === id) }; };
+  sh.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
+    const { pre, id, item } = pick(b.dataset.go); if (!item) return openList();
+    if (isHidden(pre, id)) setHidden(pre, id, false);   // 감춘 것을 '보기'하면 다시 보이게
+    closeSheet();
+    if (pre === 'm:') map.setView([item.lat, item.lng], Math.max(map.getZoom(), 15));
+    else { map.fitBounds(trackBounds(item), { padding:[40,40] }); showInfo(`<b>${esc(item.name)}</b><br>${statText(item)}`); }
+  });
+  sh.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
+    const { pre, item } = pick(b.dataset.edit); if (!item) return openList();
+    if (pre === 'm:') addMarkSheet([item.lat, item.lng], item); else editTrackSheet(item);
+  });
+  sh.querySelectorAll('[data-hide]').forEach(b => b.onclick = () => { const { pre, id } = pick(b.dataset.hide); setHidden(pre, id, !isHidden(pre, id)); openList(); });
+  sh.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const { pre, id } = pick(b.dataset.del); delete db.hidden[pre + id]; pre === 'm:' ? removeMark(id) : removeTrack(id); openList(); });
   $('bExport').onclick = () => {
     const blob = new Blob([JSON.stringify({ marks:db.marks, tracks:db.tracks }, null, 1)], { type:'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
