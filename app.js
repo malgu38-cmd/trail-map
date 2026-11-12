@@ -1,5 +1,5 @@
 'use strict';
-const APP_VER = '2026-11-13 (9)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
+const APP_VER = '2026-11-13 (10)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
 /* 접속 제한 규칙(CSP)에 걸린 요청을 기록해 둔다 → "앱 점검" 화면에서 보여 준다 */
 const cspLog = [];
 document.addEventListener('securitypolicyviolation', e => { if (cspLog.length < 20) cspLog.push(e.violatedDirective + ' → ' + String(e.blockedURI).slice(0, 60)); });
@@ -218,12 +218,12 @@ map.on('dragstart', () => { if (follow) { follow = false; $('bLocate').classList
 
 /* ---------- 내 표시(마커) ---------- */
 const markLayer = L.layerGroup().addTo(map);
-function pinIcon(k){ const t = typeOf(k); return L.divIcon({ className:'', html:`<div class="pin" style="background:${t.c};color:${t.f||'#fff'}">${ICON[t.icon]}</div>`, iconSize:[44,44], iconAnchor:[22,44], popupAnchor:[0,-40] }); }
+function pinIcon(k){ const t = typeOf(k); return L.divIcon({ className:'', html:`<div class="pin" style="background:${t.c};color:${t.f||'#fff'}">${ICON[t.icon]}</div>`, iconSize:[32,32], iconAnchor:[16,32], popupAnchor:[0,-30] }); }
 function drawMarks(){
   markLayer.clearLayers();
   db.marks.forEach(m => {
     const mk = L.marker([m.lat, m.lng], { icon:pinIcon(m.type) }).addTo(markLayer);
-    if (m.name) mk.bindTooltip(`<span style="background:${typeOf(m.type).c};color:${typeOf(m.type).f||'#fff'}">${esc(m.name)}</span>`, { permanent:true, direction:'right', offset:[14,-26], className:'mlabel' });
+    if (m.name) mk.bindTooltip(`<span style="background:${typeOf(m.type).c};color:${typeOf(m.type).f||'#fff'}">${esc(m.name)}</span>`, { permanent:true, direction:'right', offset:[10,-19], className:'mlabel' });
     mk.bindPopup(() => {
       const d = document.createElement('div');
       d.innerHTML = `<b>${esc(m.name || typeOf(m.type).label)}</b><br><span style="color:#787878;font-size:18px">${typeOf(m.type).label} · ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</span><br>`;
