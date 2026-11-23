@@ -1,5 +1,5 @@
 'use strict';
-const APP_VER = '2026-11-13 (12)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
+const APP_VER = '2026-11-23 (13)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
 /* 접속 제한 규칙(CSP)에 걸린 요청을 기록해 둔다 → "앱 점검" 화면에서 보여 준다 */
 const cspLog = [];
 document.addEventListener('securitypolicyviolation', e => { if (cspLog.length < 20) cspLog.push(e.violatedDirective + ' → ' + String(e.blockedURI).slice(0, 60)); });
@@ -55,7 +55,7 @@ function save(quiet){
 }
 function saveData(){ const ok = save(); syncSoon(); return ok; } // 표시·경로가 바뀌었을 때
 function removeMark(id){ db.marks = db.marks.filter(x => x.id !== id); db.gone['m:' + id] = Date.now(); saveData(); drawMarks(); }
-function removeTrack(id){ db.tracks = db.tracks.filter(x => x.id !== id); db.gone['t:' + id] = Date.now(); saveData(); drawTracks(); }
+function removeTrack(id){ db.tracks = db.tracks.filter(x => x.id !== id); db.gone['t:' + id] = Date.now(); saveData(); drawTracks(); if (typeof onTrackGone === 'function') onTrackGone(id); }
 
 /* ---------- 지도 ---------- */
 const VKEY = '9F35E2D2-DD0E-4503-ADF5-ACA296DF46B3'; // 브이월드 개발키 (malgu38-cmd.github.io 전용, 만료 2027-05-04)
@@ -215,7 +215,8 @@ function onPos(p){
   if (firstFix) { map.setView(ll, Math.max(map.getZoom(), 15)); firstFix = false; }
   else if (follow) map.panTo(ll, { animate:true });
   const alt = p.coords.altitude != null ? ` · 고도 <b>${Math.round(p.coords.altitude)} m</b>` : '';
-  if (mode !== 'ruler') showInfo(`위도 ${ll[0].toFixed(5)} · 경도 ${ll[1].toFixed(5)}${alt}<br><span style="color:var(--gray);font-size:18px">오차 약 ±${Math.round(acc)} m · 버튼 다시 누르면 위치 끄기</span>`);
+  if (typeof recBusy === 'function' && recBusy()) { if (mode !== 'ruler') showInfo(null); }   // 기록판이 열려 있으면 위치 글은 기록판이 대신 보여 준다
+  else if (mode !== 'ruler') showInfo(`위도 ${ll[0].toFixed(5)} · 경도 ${ll[1].toFixed(5)}${alt}<br><span style="color:var(--gray);font-size:18px">오차 약 ±${Math.round(acc)} m · 버튼 다시 누르면 위치 끄기</span>`);
 }
 function onPosErr(e){
   const msg = e.code === 1 ? '위치 권한이 꺼져 있어요. 아이폰 설정 → 개인정보 보호 → 위치 서비스 → Safari 웹 사이트를 "앱을 사용하는 동안"으로 바꿔 주세요.'
@@ -348,7 +349,14 @@ function drawTracks(){
     if (t.coords.length > 1) {
       L.polyline(t.coords.map(c => [c[0], c[1]]), { color:'#fff', weight:9, opacity:.85 }).addTo(trackLayer);
       L.polyline(t.coords.map(c => [c[0], c[1]]), { color:col, weight:5 }).addTo(trackLayer)
-        .bindPopup(`<b>${esc(t.name)}</b><br>${statText(t)}`);
+        .bindPopup(() => {
+          const d = document.createElement('div');
+          d.innerHTML = `<b>${esc(t.name)}</b><br>${statText(t)}<br>`;
+          const b = document.createElement('button'); b.textContent = '고도 그래프';
+          b.style.cssText = 'border-color:#E83828;background:#E83828;color:#fff;font-weight:700';
+          b.onclick = () => { map.closePopup(); openElev(t); };
+          d.appendChild(b); return d;
+        });
     }
     t.wpts.forEach(w => L.circleMarker([w.lat, w.lng], { radius:8, color:'#fff', weight:3, fillColor:col, fillOpacity:1 })
       .addTo(trackLayer).bindPopup(`<b>${esc(w.name || '지점')}</b><br><span style="font-size:18px;color:#787878">${esc(t.name)}</span>`));
@@ -383,7 +391,7 @@ $('gpxFile').onchange = async e => {
     if (!saveData()) { db.tracks.pop(); return; }
     drawTracks();
     map.fitBounds(trackBounds(t), { padding:[40,40] });
-    showInfo(`<b>${esc(t.name)}</b><br>${statText(t)}`);
+    openElev(t);
   } catch(err) { alertSheet(err.message); }
 };
 
@@ -412,7 +420,7 @@ function openList(){
     if (isHidden(pre, id)) setHidden(pre, id, false);   // 감춘 것을 '보기'하면 다시 보이게
     closeSheet();
     if (pre === 'm:') map.setView([item.lat, item.lng], Math.max(map.getZoom(), 15));
-    else { map.fitBounds(trackBounds(item), { padding:[40,40] }); showInfo(`<b>${esc(item.name)}</b><br>${statText(item)}`); }
+    else { map.fitBounds(trackBounds(item), { padding:[40,40] }); openElev(item); }
   });
   sh.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
     const { pre, item } = pick(b.dataset.edit); if (!item) return openList();
