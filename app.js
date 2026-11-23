@@ -1,5 +1,5 @@
 'use strict';
-const APP_VER = '2026-11-23 (13)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
+const APP_VER = '2026-11-23 (14)'; // 올릴 때마다 바꾼다. "앱 점검" 화면 첫 줄에 표시
 /* 접속 제한 규칙(CSP)에 걸린 요청을 기록해 둔다 → "앱 점검" 화면에서 보여 준다 */
 const cspLog = [];
 document.addEventListener('securitypolicyviolation', e => { if (cspLog.length < 20) cspLog.push(e.violatedDirective + ' → ' + String(e.blockedURI).slice(0, 60)); });
@@ -210,7 +210,7 @@ function onPos(p){
   const ll = [p.coords.latitude, p.coords.longitude], acc = p.coords.accuracy;
   if (!meMarker) {
     meCircle = L.circle(ll, { radius:acc, color:'#1a73e8', weight:1, fillOpacity:.12 }).addTo(map);
-    meMarker = L.marker(ll, { icon:L.divIcon({ className:'', html:'<div class="me"></div>', iconSize:[22,22], iconAnchor:[11,11] }), interactive:false }).addTo(map);
+    meMarker = L.marker(ll, { icon:L.divIcon({ className:'', html:'<div class="me"></div>', iconSize:[22,22], iconAnchor:[11,11] }), interactive:false, zIndexOffset:10000 }).addTo(map); // 내 위치는 항상 표시 핀보다 위에
   } else { meMarker.setLatLng(ll); meCircle.setLatLng(ll).setRadius(acc); }
   if (firstFix) { map.setView(ll, Math.max(map.getZoom(), 15)); firstFix = false; }
   else if (follow) map.panTo(ll, { animate:true });
